@@ -17,6 +17,8 @@ import java.util.Objects;
 
 import me.blankboy.remotecommunicationutils.*;
 
+import static java.lang.Thread.sleep;
+
 public class Terminal extends AppCompatActivity implements LogReceiver, ChannelListener {
 
     Logger Console = new Logger();
@@ -37,8 +39,38 @@ public class Terminal extends AppCompatActivity implements LogReceiver, ChannelL
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_terminal);
         Console.addListener(this);
-        //Console.Debug = true;
+        Console.Debug = true;
+
+        Thread t = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try{
+                    while (true){
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                Runtime runtime = Runtime.getRuntime();
+                                long usedMemInMB = (runtime.totalMemory() - runtime.freeMemory()) / 1048576L;
+                                long maxHeapSizeInMB = runtime.maxMemory() / 1048576L;
+                                long availHeapSizeInMB = maxHeapSizeInMB - usedMemInMB;
+                                TextView heapStatus = findViewById(R.id.textView);
+                                String heapMessage = usedMemInMB + "MB in use and " + availHeapSizeInMB + "MB available of " + maxHeapSizeInMB + "MB in total.";
+                                heapStatus.setText(heapMessage);
+                            }
+                        });
+                        sleep(500);
+                    }
+                }
+                catch (Exception ignored){
+
+                }
+            }
+        });
+
+        t.start();
     }
+
+
 
     public void onClick(View view){
         hideKeyboardFrom(this, view);
@@ -101,6 +133,8 @@ public class Terminal extends AppCompatActivity implements LogReceiver, ChannelL
             try {
                 String message = new String(chunk.readAllBytes());
                 Console.Log("Server ( " + chunk.Latency() + "ms ): " + message);
+                //Console.Log(String.valueOf(chunk.Sent));
+                //Console.Log(String.valueOf(System.currentTimeMillis()));
             } catch (IOException e) {
                 Console.Log(e.toString());
             }

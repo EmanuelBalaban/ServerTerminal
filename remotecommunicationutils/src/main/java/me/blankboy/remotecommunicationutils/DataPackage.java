@@ -291,13 +291,13 @@ public class DataPackage implements AutoCloseable {
     }
 
     long getLastPosition(boolean extraSearch) {
-        Chunk item = null;
+        Chunk item = null;//new Chunk(this, );
         if (extraSearch) {
             long max = 0;
             for (Chunk x: Chunks)
-                if (item.Position > max){
+                if (x.Position > max){
                     item = x;
-                    max = item.Position;
+                    max = x.Position;
                 }
         } else if (Chunks.size() > 0) item = Chunks.get(Chunks.size() - 1);
 

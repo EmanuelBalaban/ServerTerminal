@@ -8,4 +8,5 @@
     <string name="sendFile">Send File</string>
     <string name="connectButton">Connect</string>
     <string name="connectViaQRButton">Connect via QR</string>
+    <string name="heapStatus">Heap Memory Status</string>
 </resources>

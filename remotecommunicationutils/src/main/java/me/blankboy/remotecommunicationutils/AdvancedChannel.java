@@ -123,7 +123,6 @@ public class AdvancedChannel implements AutoCloseable, ConnectionListener {
                                 else
                                     Console.Log("Couldn't confirm package with id: " + dp.getUniqueID(), TypesOLog.DEBUG);
                                 if (dp.isFinished()) OutgoingQueue.remove(dp);
-
                             }
                         } else {
                             DataPackage dp = null;
@@ -229,7 +228,7 @@ public class AdvancedChannel implements AutoCloseable, ConnectionListener {
     // Send a simple message! (or write message data to new DataPackage -> stream)
     // code = 0, uniqueID = -1
     public void sendMessage(String message, byte code, int uniqueID) {
-        if (!InServiceIDs.contains(uniqueID))
+        if (InServiceIDs.contains(uniqueID))
             uniqueID = allocateNewID();
         byte[] data = message.getBytes();
         DataPackage dp = new DataPackage(uniqueID, data.length, code, CacheFolder, ConfirmationSystem);
@@ -323,6 +322,7 @@ public class AdvancedChannel implements AutoCloseable, ConnectionListener {
                             int attemptCount = 0;
 
                             Chunk chunk = current.nextChunk();
+                            chunk.Sent = System.currentTimeMillis();
                             byte[] buffer = current.getChunkData(chunk);
 
                             do {
@@ -345,14 +345,14 @@ public class AdvancedChannel implements AutoCloseable, ConnectionListener {
                             if (current.ConfirmationSystem && chunk.Confirmation == TypesOConfirmation.NotConfirmed) {
                                 Console.Log("Unable to process package '" + current.getUniqueID() + "'. " + String.valueOf(current.getSize() - (chunk.Position + chunk.Length)) + " bytes left!", TypesOLog.DEBUG);
                                 current.close();
-                                //OutgoingQueue.remove(current);
+                                OutgoingQueue.remove(current);
                             } else {
                                 //current.Position = current.Stream.Position;
                                 if (current.isFinished()) {
                                     Console.Log("Successfully processed package with id: " + current.getUniqueID(), TypesOLog.DEBUG);
                                     current.getOutputStream().flush();
                                     if (current.isBuffered()) current.getOutputStream().close();
-                                    //OutgoingQueue.remove(current);
+                                    OutgoingQueue.remove(current);
                                 } else if (current.Priority == TypesOPriority.Normal)
                                     last = current;
                             }
