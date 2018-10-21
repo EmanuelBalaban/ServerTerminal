@@ -124,8 +124,9 @@ final class Extensions {
         return sBuilder.toString();
     }
     */
-
+/*
     public static String getTempDirectory() {
+
         try {
             File temp = File.createTempFile("temp-file-name", ".tmp");
             String absolutePath = temp.getAbsolutePath();
@@ -136,5 +137,7 @@ final class Extensions {
 
         }
         return "";
+
     }
+*/
 }

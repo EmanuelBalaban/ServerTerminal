@@ -14,7 +14,11 @@ public class Logger {
     }
     private void broadcast(LogData log){
         for (LogReceiver l : Listeners)
-            l.onLogReceived(log);
+            l.onLogReceived(log, this);
+    }
+    private void refresh(LogData log, int line){
+        for (LogReceiver l : Listeners)
+            l.onLogRefresh(log, line, this);
     }
 
     public boolean Debug = false;
@@ -24,35 +28,39 @@ public class Logger {
 
     public List<LogData> Logs = new ArrayList<>();
 
-    public void Log(String message){
-        Log(message, TypesOLog.INFO);
+    public int Log(String message){
+        return Log(message, TypesOLog.INFO);
     }
-    public void Log(String message, TypesOLog messType)
+    public int Log(String message, int lineID){
+        return Log(message, TypesOLog.INFO, lineID);
+    }
+    public int Log(String message, TypesOLog messType){
+        return Log(message, messType, -1);
+    }
+    public int Log(String message, TypesOLog messType, int lineID)
     {
-        try
-        {
-            LogData mess = new LogData();
+        LogData mess = new LogData();
 
-            mess.Text = message;
-            mess.Type = messType;
-            mess.Time = new Date(System.currentTimeMillis());
+        mess.Text = message;
+        mess.Type = messType;
+        mess.Time = new Date(System.currentTimeMillis());
 
+        if (0 <= lineID && lineID < Logs.size()) {
+            Logs.set(lineID, mess);
+            if (messType != TypesOLog.DEBUG || Debug) refresh(mess, lineID);
+            return lineID;
+        }
+        else {
             Logs.add(mess);
-
-            if (messType != TypesOLog.DEBUG || Debug){
-                broadcast(mess);
-            }
+            if (messType != TypesOLog.DEBUG || Debug) broadcast(mess);
+            return Logs.size() - 1;
         }
-        catch(Exception ex)
-        {
-            LogData error = new LogData();
-
-            error.Text = ex.toString();
-            error.Type = TypesOLog.ERROR;
-            error.Time = new Date(System.currentTimeMillis());
-
-            broadcast(error);
+        /*
+        if (messType != TypesOLog.DEBUG || Debug){
+            broadcast(mess);
         }
+        return lineID;
+        */
     }
 
     @Override

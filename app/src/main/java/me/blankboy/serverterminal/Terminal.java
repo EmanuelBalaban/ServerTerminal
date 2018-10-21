@@ -2,6 +2,7 @@ package me.blankboy.serverterminal;
 
 import android.app.Activity;
 import android.content.Context;
+import android.os.Environment;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.view.View;
@@ -9,10 +10,13 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.TextView;
 
+import java.io.File;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketAddress;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 
 import me.blankboy.remotecommunicationutils.*;
@@ -23,7 +27,7 @@ public class Terminal extends AppCompatActivity implements LogReceiver, ChannelL
 
     Logger Console = new Logger();
     @Override
-    public void onLogReceived(LogData logData) {
+    public void onLogReceived(LogData logData, Logger sender) {
         final LogData log = logData;
         runOnUiThread(new Runnable() {
             @Override
@@ -35,11 +39,32 @@ public class Terminal extends AppCompatActivity implements LogReceiver, ChannelL
     }
 
     @Override
+    public void onLogRefresh(LogData log, int line, final Logger sender) {
+        /*
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                TextView debug = findViewById(R.id.debugText);
+                debug.setText("");
+
+                List<LogData> save = new ArrayList(sender.Logs);
+                for (LogData l : save){
+                    if (l.Type != TypesOLog.DEBUG || sender.Debug)
+                        debug.append("\n" + l.toString("[{type}] {text}", ""));
+                }
+            }
+        });
+        */
+    }
+
+    int i = 0;
+
+    @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_terminal);
         Console.addListener(this);
-        Console.Debug = true;
+        //Console.Debug = true;
 
         Thread t = new Thread(new Runnable() {
             @Override
@@ -56,6 +81,8 @@ public class Terminal extends AppCompatActivity implements LogReceiver, ChannelL
                                 TextView heapStatus = findViewById(R.id.textView);
                                 String heapMessage = usedMemInMB + "MB in use and " + availHeapSizeInMB + "MB available of " + maxHeapSizeInMB + "MB in total.";
                                 heapStatus.setText(heapMessage);
+
+                                //percentageID = Console.Log(String.valueOf(i++), percentageID);
                             }
                         });
                         sleep(500);
@@ -94,7 +121,9 @@ public class Terminal extends AppCompatActivity implements LogReceiver, ChannelL
                             Socket so = new Socket();
                             so.connect(endPoint);
                             Console.Log("Connected!");
-                            Variables.aChannel = new AdvancedChannel(new Connection(0, so, Console, true));
+                            Variables.aChannel = new AdvancedChannel(new Connection(0, so, Console, true), getCacheDir());
+                            //Console.Log(getCacheDir().getCanonicalPath());
+                            //Console.Log(getCacheDir().getAbsolutePath());
                         }
                         catch (Exception ex){
                             Console.Log(ex.getMessage());
@@ -118,7 +147,7 @@ public class Terminal extends AppCompatActivity implements LogReceiver, ChannelL
                 else if (!Variables.aChannel.isStillConnected()) Console.Log("isStillConnected() returned false!");
                 //if (Variables.aChannel != null && Variables.aChannel.isStillConnected())
                 {
-                    Variables.aChannel.sendMessage(mess.getText().toString(), (byte) 3);
+                    messageID = Variables.aChannel.sendMessage(mess.getText().toString(), (byte) 3);
                     Console.Log("You: " + mess.getText().toString());
                 } //else Console.Log("You need to connect to a server first!");
                 break;
@@ -126,6 +155,17 @@ public class Terminal extends AppCompatActivity implements LogReceiver, ChannelL
                 break;
         }
     }
+
+    int messageID = -1;
+
+    @Override
+    public void onDataConfirmed(DataPackage data, Chunk chunk, AdvancedChannel sender) {
+        if (data.getUniqueID() == messageID){
+            Console.Log("Latency: " + data.averageLatency() + "ms");
+        }
+    }
+
+    volatile int lastStep = -1;
 
     @Override
     public void onDataReceived(DataPackage data, Chunk chunk, AdvancedChannel sender) {
@@ -137,6 +177,30 @@ public class Terminal extends AppCompatActivity implements LogReceiver, ChannelL
                 //Console.Log(String.valueOf(System.currentTimeMillis()));
             } catch (IOException e) {
                 Console.Log(e.toString());
+            }
+        }
+        else if (chunk.Code == 4){
+            double percentage = (data.getLength() / data.getSize()) * 100;
+            if (lastStep < (int)percentage){
+                Console.Log("Downloading file: " + percentage + "%");
+                lastStep = (int) percentage;
+            }
+
+            if (data.getLength() == data.getSize()) {
+                lastStep = -1;
+                Console.Log("Received file with size " + data.getLength());
+                File dir = new File(Environment.getExternalStorageDirectory() + File.separator + "Download" + File.separator + "tempFile.tmp");
+                try {
+                    data.saveToFile(dir);
+                } catch (IOException e) {
+                    Console.Log(e.toString());
+                } finally {
+                    try {
+                        Console.Log("File available in: " + dir.getCanonicalPath());
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
             }
         }
     }

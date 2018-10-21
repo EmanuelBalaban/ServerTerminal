@@ -43,6 +43,12 @@ public class DataPackage implements AutoCloseable {
     @Override
     public void close() throws Exception {
         if (_OutputStream != null) _OutputStream.close();
+        try{
+            File file = new File(Path);
+            if (file.exists()) file.delete();
+        }
+        catch (Exception ignored){
+        }
     }
 
     @Override
@@ -311,7 +317,8 @@ public class DataPackage implements AutoCloseable {
 
     // This is just for receive purposes!
     // CacheFolder = null, writeData = true
-    public DataPackage(byte[] data, String CacheFolder, boolean writeData) throws DataFormatException {
+    // IOException thrown if problems with CacheFolder
+    public DataPackage(byte[] data, String CacheFolder, boolean writeData) throws DataFormatException, IOException {
         if (!isValidFormat(data)) throw new DataFormatException("Invalid format!");
         int offset = 0;
 
@@ -336,7 +343,7 @@ public class DataPackage implements AutoCloseable {
         offset += Extensions.LongSize;
 
         // Message(Size - Offset)
-        setCacheFolder(Extensions.getTempDirectory());
+        this.CacheFolder = CacheFolder;
         resetStream();
 
         if (writeData) {
@@ -361,13 +368,14 @@ public class DataPackage implements AutoCloseable {
         this.ConfirmationSystem = ConfirmationSystem;
     }
 
-    // Create a new DataPackage ready to be writen to and sent.
-    public DataPackage(int UniqueID, long Size, byte Code, String CacheFolder, boolean ConfirmationSystem) {
+    // Create a new DataPackage ready to be written to and sent.
+    // This IOException is thrown only if CacheFolder has a problem.
+    public DataPackage(int UniqueID, long Size, byte Code, String CacheFolder, boolean ConfirmationSystem) throws IOException {
         this.UniqueID = UniqueID;
         this.Size = Size;
         this.Code = Code;
         this.ConfirmationSystem = ConfirmationSystem;
-        setCacheFolder(Extensions.getTempDirectory());
+        this.CacheFolder = CacheFolder;
         resetStream();
     }
 
@@ -383,21 +391,6 @@ public class DataPackage implements AutoCloseable {
 
     public int getUniqueID() {
         return UniqueID;
-    }
-
-    // In case of buffering it is going to be saved here.
-    private String Path = null;
-
-    public String getPath() {
-        return Path;
-    }
-
-    // Expected size is bigger than allowed MaximumUnBuffered. This indicates it is being saved to a temporary file.
-    //private boolean _IsBuffered = false;
-
-    public boolean isBuffered() {
-        return Size > MaximumUnBuffered || _OutputStream instanceof FileOutputStream;
-        //return _IsBuffered;
     }
 
     // This package stream code. Usually StreamCodes.Append.
@@ -475,45 +468,61 @@ public class DataPackage implements AutoCloseable {
         return data.length >= DefaultMessageOffset;
     }
 
-    String _CacheFolder = "";//System.IO.Path.GetTempPath();
+    // Save this DataPackage contents to file.
+    public void saveToFile(File dest) throws IOException {
+        /*
+        try {
+            if (dest.exists()) dest.delete();
+        }
+        catch (Exception ignored){
 
-    // This is where temporary files are being stored.
-    // By default this equals Path.GetTempPath().
-    public String getCacheFolder() {
-        return _CacheFolder;
+        }
+        */
+        dest.createNewFile();
+        BufferedOutputStream ofstream = new BufferedOutputStream(new FileOutputStream(dest));
+        BufferedInputStream ifstream = new BufferedInputStream(new FileInputStream(Path));
+        int bufferSize = 1024 * 4;
+        byte[] buffer = new byte[bufferSize];
+        int read;
+        while ((read = ifstream.read(buffer, 0, bufferSize)) > 0){
+            ofstream.write(buffer, 0, read);
+        }
+        ifstream.close();
+        ofstream.flush();
+        ofstream.close();
+        System.gc();
     }
 
-    public void setCacheFolder(String value) {
-        if (value == null) value = Extensions.getTempDirectory();
+    // In case of buffering it is going to be saved here.
+    private String CacheFolder = null;
+    private String Path = null;
 
-        File dir = new File(value);
-
-        if (dir.exists() && dir.isDirectory())
-            _CacheFolder = value;
-        else
-            _CacheFolder = Extensions.getTempDirectory();
+    // Expected size is bigger than allowed MaximumUnBuffered. This indicates it is being saved to a temporary file.
+    public boolean isBuffered() {
+        return Size > MaximumUnBuffered || _OutputStream instanceof FileOutputStream;
+        //return _IsBuffered;
     }
 
     // Reset entire stream. Be careful with this! it is not for kids!
-    public void resetStream() {
+    public void resetStream() throws IOException {
         try {
             File f = new File(Path);
             if (f.exists()) f.delete();
-            Path = null;
-            if (Size > MaximumUnBuffered) {
-                File tmp = File.createTempFile("blankboy", ".tmp", new File(_CacheFolder));
-                Path = tmp.getAbsolutePath();
-                _OutputStream = new FileOutputStream(tmp);
-            } else _OutputStream = new ByteArrayOutputStream();
         } catch (Exception ignored) {
 
+        } finally {
+            Path = null;
         }
+        if (Size > MaximumUnBuffered) {
+            File tmp = File.createTempFile("rcu_temp", null, new File(CacheFolder));
+            Path = tmp.getCanonicalPath();
+            _OutputStream = new FileOutputStream(tmp);
+        } else _OutputStream = new ByteArrayOutputStream();
     }
 
     /// Get human readable version of this package.
     @Override
     public String toString() {
-
         StringBuilder sb = new StringBuilder();
 
         sb.append("{");
@@ -553,6 +562,5 @@ public class DataPackage implements AutoCloseable {
         sb.append("}");
 
         return sb.toString();
-
     }
 }

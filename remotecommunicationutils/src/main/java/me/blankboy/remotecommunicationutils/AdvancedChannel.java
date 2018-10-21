@@ -4,14 +4,13 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Random;
-
-// TODO: Get rid of downcasted Stream functionality.
 
 // Use this and thank me later, or you can thank me now in advance :P.
 // This provides Connection extra fundamental methods and ensures there is no data loss.
@@ -40,6 +39,11 @@ public class AdvancedChannel implements AutoCloseable, ConnectionListener {
             l.onDataReceived(data, chunk, this);
     }
 
+    private void onDataConfirmed(DataPackage data, Chunk chunk){
+        for (ChannelListener l : Listeners)
+            l.onDataConfirmed(data, chunk, this);
+    }
+
     private void broadcastException(Exception ex) {
         Console.Log(ex.toString(), TypesOLog.ERROR);
         onExceptionOccurred(ex);
@@ -60,7 +64,8 @@ public class AdvancedChannel implements AutoCloseable, ConnectionListener {
     }
 
     // Create new advanced channel and Initialize it.
-    public AdvancedChannel(Connection connection) {
+    public AdvancedChannel(Connection connection, File CacheFolder) throws IOException {
+        setCacheFolder(CacheFolder);
         this.Connection = connection;
         InitializeChannel();
     }
@@ -94,21 +99,21 @@ public class AdvancedChannel implements AutoCloseable, ConnectionListener {
                 byte[] data = thread;
                 Date received = threadReceived;
                 try {
-                    Console.Log(Arrays.toString(data), TypesOLog.DEBUG);
+                    //Console.Log(Arrays.toString(data), TypesOLog.DEBUG);
 
                     if (DataPackage.isValidFormat(data)) {
-                        Console.Log("Received valid format data!", TypesOLog.DEBUG);
+                        //Console.Log("Received valid format data!", TypesOLog.DEBUG);
 
                         DataPackage justForCheck = new DataPackage(data, CacheFolder, false);
-                        Console.Log("Parsed data into DataPackage!", TypesOLog.DEBUG);
+                        //Console.Log("Parsed data into DataPackage!", TypesOLog.DEBUG);
 
                         StreamCodes Code = StreamCodes.valueOf(justForCheck.StreamCode);
-                        Console.Log(justForCheck.toString(), TypesOLog.DEBUG);
+                        //Console.Log(justForCheck.toString(), TypesOLog.DEBUG);
 
                         if (Code == StreamCodes.Confirm) {
                             DataPackage dp = null;
                             for (DataPackage d : OutgoingQueue) {
-                                Console.Log("Searching ID = " + d.getUniqueID(), TypesOLog.DEBUG);
+                                //Console.Log("Searching ID = " + d.getUniqueID(), TypesOLog.DEBUG);
                                 if (d.getUniqueID() == justForCheck.getUniqueID()) {
                                     dp = d;
                                     break;
@@ -116,12 +121,15 @@ public class AdvancedChannel implements AutoCloseable, ConnectionListener {
                             }
                             if (dp != null) {
 
-                                Console.Log("Attempting to confirm package with id: " + dp.getUniqueID(), TypesOLog.DEBUG);
+                                //Console.Log("Attempting to confirm package with id: " + dp.getUniqueID(), TypesOLog.DEBUG);
                                 boolean result = dp.confirmChunk(data, DataPackage.DefaultMessageOffset, data.length - DataPackage.DefaultMessageOffset);
                                 if (result)
-                                    Console.Log("Confirmed package with id: " + dp.getUniqueID(), TypesOLog.DEBUG);
+                                {
+                                    //Console.Log("Confirmed package with id: " + dp.getUniqueID(), TypesOLog.DEBUG);
+                                    onDataConfirmed(dp, dp.Chunks.get(dp.Chunks.size() - 1));
+                                }
                                 else
-                                    Console.Log("Couldn't confirm package with id: " + dp.getUniqueID(), TypesOLog.DEBUG);
+                                    //Console.Log("Couldn't confirm package with id: " + dp.getUniqueID(), TypesOLog.DEBUG);
                                 if (dp.isFinished()) OutgoingQueue.remove(dp);
                             }
                         } else {
@@ -138,16 +146,24 @@ public class AdvancedChannel implements AutoCloseable, ConnectionListener {
                                 reportID(dp.getUniqueID());
                             }
 
-                            Console.Log("Got DataPackage to save to!", TypesOLog.DEBUG);
+                            //Console.Log("Got DataPackage to save to!", TypesOLog.DEBUG);
 
                             Chunk chunk = dp.parseChunk(data);
                             dp.saveChunk(chunk, data, DataPackage.DefaultMessageOffset, false, false);
 
                             if (Code == StreamCodes.Append) {
                                 // Faster will be to use normal method and chunk.GetHashData()
-                                Console.Log("Sending confirmation data...", TypesOLog.DEBUG);
+                                //Console.Log("Sending confirmation data...", TypesOLog.DEBUG);
 
-                                byte[] hash = chunk.getHashData();
+                                byte[] hash = null;
+
+                                try {
+                                    MessageDigest md = MessageDigest.getInstance("MD5");
+                                    md.update(data, DataPackage.DefaultMessageOffset, data.length - DataPackage.DefaultMessageOffset);
+                                    hash = md.digest();
+                                } catch (Exception ignored) {
+                                }
+
                                 DataPackage dpa = new DataPackage(dp.getUniqueID(), hash.length, (byte) 0, CacheFolder, false);
                                 dpa.getOutputStream().write(hash, 0, hash.length);
                                 dpa.StreamCode = StreamCodes.Confirm.getValue();
@@ -157,7 +173,7 @@ public class AdvancedChannel implements AutoCloseable, ConnectionListener {
                             }
 
                             if (dp.isFinished()) {
-                                //IncomingPackages.Remove(dp);
+                                IncomingPackages.remove(dp);
                             }
 
                             onDataReceived(dp, chunk);
@@ -212,34 +228,43 @@ public class AdvancedChannel implements AutoCloseable, ConnectionListener {
     public boolean ConfirmationSystem = true;
 
     // This is where temporary files are being stored.
-    public String CacheFolder = null; //Path.GetTempPath();
+    public String CacheFolder = null;
+    public void setCacheFolder(File cacheFolder) throws IOException {
+        if (!cacheFolder.exists()) cacheFolder.mkdirs();
+        CacheFolder = cacheFolder.getCanonicalPath();
+    }
 
     // Send a file! Actually it creates a new DataPackage with specified file stream.
-    // code = 4, buffer = 4096 * 1000
-    public void sendFile(String path, byte code, int buffer) throws IOException, FileNotFoundException {
-        if (!new File(path).exists()) throw new FileNotFoundException();
+    // code = 4, buffer = 4096 * 1000, awaitConfirmation = true
+    public int sendFile(File fileToSend, byte code, int buffer, boolean awaitConfirmation) throws IOException, FileNotFoundException {
+        if (!fileToSend.exists()) throw new FileNotFoundException();
         int UniqueID = allocateNewID();
-        FileInputStream fs = new FileInputStream(path);
-        DataPackage dp = new DataPackage(UniqueID, fs, code, ConfirmationSystem);
+        FileInputStream fs = new FileInputStream(fileToSend);
+        DataPackage dp = new DataPackage(UniqueID, fs, code, ConfirmationSystem && awaitConfirmation);
         dp.Buffer = buffer;
         send(dp);
+        return UniqueID;
+    }
+    public int sendFile(File fileToSend, byte code, int buffer) throws IOException {
+        return sendFile(fileToSend, code, buffer, ConfirmationSystem);
     }
 
     // Send a simple message! (or write message data to new DataPackage -> stream)
-    // code = 0, uniqueID = -1
-    public void sendMessage(String message, byte code, int uniqueID) {
-        if (InServiceIDs.contains(uniqueID))
-            uniqueID = allocateNewID();
+    // code = 0, awaitConfirmation = true
+    public int sendMessage(String message, byte code, boolean awaitConfirmation) {
+        int uniqueID = allocateNewID();
         byte[] data = message.getBytes();
-        DataPackage dp = new DataPackage(uniqueID, data.length, code, CacheFolder, ConfirmationSystem);
+        DataPackage dp = null;
         try {
+            dp = new DataPackage(uniqueID, data.length, code, CacheFolder, ConfirmationSystem && awaitConfirmation);
             dp.getOutputStream().write(data, 0, data.length);
         } catch (IOException ignored) {
         }
         send(dp);
+        return uniqueID;
     }
-    public void sendMessage(String message, byte code){
-        sendMessage(message, code, allocateNewID());
+    public int sendMessage(String message, byte code){
+        return sendMessage(message, code, ConfirmationSystem);
     }
 
     // Send DataPackage over the stream.
@@ -348,6 +373,8 @@ public class AdvancedChannel implements AutoCloseable, ConnectionListener {
                                 OutgoingQueue.remove(current);
                             } else {
                                 //current.Position = current.Stream.Position;
+                                //onDataConfirmed(current, chunk);
+
                                 if (current.isFinished()) {
                                     Console.Log("Successfully processed package with id: " + current.getUniqueID(), TypesOLog.DEBUG);
                                     current.getOutputStream().flush();

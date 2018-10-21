@@ -90,6 +90,7 @@ public class Chunk {
 
     // This is used to ensure there s no data loss. Still reading this?!
     public TypesOConfirmation Confirmation = TypesOConfirmation.NotConfirmed;
+    // TODO: add Confirmation data. and then change the latency and other calculations.
 
     // Get human readable version of this object.
     @Override

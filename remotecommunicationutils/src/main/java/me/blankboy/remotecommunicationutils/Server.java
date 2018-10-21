@@ -188,7 +188,7 @@ public class Server implements ConnectionListener {
         updateStatus(StatusType.CLOSED);
     }
 
-    // Dont want any new folks, ya now what todo!
+    // Dont want any new folks, ya now what to do!
     public void Stop()
     {
         try
